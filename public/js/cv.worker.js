@@ -110,7 +110,7 @@ const methods = {
 				0, 0, 0, 1,
 				30, 0, 0, 1,
 				0, 30, 0, 1,
-				0, 0, 30, 1
+				0, 0, -30, 1
 			]
 			const axis = cv.matFromArray(4, 4, cv.CV_64F, _axis).t()
 
