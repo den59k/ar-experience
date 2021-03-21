@@ -5,7 +5,9 @@ import { delay } from 'services/delay'
 function App() {
 
 	const sourceVideoRef = useRef()
+	const sourceImageRef = useRef()
 	const canvasRef = useRef()
+
 	const [ fps, setFps ] = useState(0)
 
 	useEffect(() => {
@@ -42,28 +44,50 @@ function App() {
 			return stream
 		}
 
+		//Отдельная функция для инициализации OpenCV
 		async function initCV (){
 			const res = await CV.init()
+
 			return res.status
 		}
 
-		Promise.all([ initCV(), initCamera(400) ]).then(values => {
+		//Функция для загрузки изображения
+		async function loadImage(){
+			const getImageData = initCanvas(sourceImageRef.current.naturalWidth, sourceImageRef.current.naturalHeight)
+			const imageData = getImageData(sourceImageRef.current)
+			const res = await CV.loadSourceImage(imageData)
+			return res
+		}
+
+		//И потом мы объединяем их в одну цепочку
+		async function init(){
+			const status = await initCV()
+			const image = await loadImage()
+
+			return { status, image }
+		}
+		
+
+		Promise.all([ init(), initCamera(400) ]).then(values => {
+			const { image } = values[0]
+			console.log(image)
+
 			const getImageData = initCanvas(sourceVideoRef.current.videoWidth, sourceVideoRef.current.videoHeight)
 			
 			//Мы запускаем цикл, в котором просто будем выводить
 			async function computeImage() {
 
-				const time = performance.now()
-
 				const imageData = getImageData(sourceVideoRef.current)
-				const resultImageData = await CV.convertToGray(imageData)
+				
+				const time = performance.now()
+				const resultImageData = await CV.matchPoints(image, imageData)
+				setFps(Math.round(1000 / (performance.now() - time)))
 
 				canvasRef.current.width = resultImageData.width
 				canvasRef.current.height = resultImageData.height
 				const ctx = canvasRef.current.getContext('2d')
 				ctx.putImageData(resultImageData, 0, 0)
-
-				setFps(Math.round(1000 / (performance.now() - time)))
+				
 				requestAnimationFrame(computeImage)
 			}
 
@@ -77,6 +101,7 @@ function App() {
 			<div className="fps">{fps} FPS</div>
 			<video ref={sourceVideoRef} playsInline={true} ></video>
 			<canvas ref={canvasRef}></canvas>
+			<img src="/images/box.png" alt="Исходное изображение" style={{display: "none"}} ref={sourceImageRef}/>
 		</div>
 	);
 }

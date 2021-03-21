@@ -34,6 +34,14 @@ class CV {
 		return this._dispatch("convertToGray", imageData)
 	}
 
+	loadSourceImage(imageData){
+		return this._dispatch("loadSourceImage", imageData) 
+	}
+
+	matchPoints (sourceImage, imageData){
+		return this._dispatch("matchPoints", { sourceImage, imageData })  
+	}
+
 }
 
 export default new CV()
