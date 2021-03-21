@@ -8,7 +8,7 @@ const methods = {
 
 		cv = await cv()                                         //Таким образом мы инициализируем OpenCV
 
-		orb = new cv.ORB(200)                                   //А затем сразу создадим ORB
+		orb = new cv.ORB(300)                                   //А затем сразу создадим ORB
 		bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING2, true)    //А заодно и матчер
 
 		console.log(Object.keys(cv))
@@ -42,7 +42,9 @@ const methods = {
 		const trainImage = getImageKeypoints(img)
 
 		const matches = new cv.DMatchVector()
-		bfMatcher.match(queryImage.descriptors, trainImage.descriptors, matches)
+
+		if(trainImage.keypoints.size() > 5)
+			bfMatcher.match(queryImage.descriptors, trainImage.descriptors, matches)
 
 		const good_matches = new cv.DMatchVector();
 		for (let i = 0; i < matches.size(); i++) {
