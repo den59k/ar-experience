@@ -1,4 +1,5 @@
 const sourceImages = []
+const angle = 30
 
 const methods = {
 	init: async () => {
@@ -7,7 +8,7 @@ const methods = {
 
 		cv = await cv()                                         //Таким образом мы инициализируем OpenCV
 
-		orb = new cv.ORB(500)                                   //А затем сразу создадим ORB
+		orb = new cv.ORB(200)                                   //А затем сразу создадим ORB
 		bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING2, true)    //А заодно и матчер
 
 		console.log(Object.keys(cv))
@@ -68,9 +69,11 @@ const methods = {
 			const mat1 = cv.matFromArray(points1.length/3, 1, cv.CV_32FC3, points1);
 			const mat2 = cv.matFromArray(points2.length/2, 1, cv.CV_32FC2, points2);
 
+			const f = img.cols/2/(Math.tan(angle/2*Math.PI/180))
+	
 			const _mtx = [
-				600, 0, img.cols / 2,
-				0, 600, img.rows / 2 ,
+				f, 0, img.cols / 2,
+				0, f, img.rows / 2 ,
 				0, 0, 1
 			]
 
