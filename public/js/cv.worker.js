@@ -9,7 +9,7 @@ const methods = {
 
 		cv = await cv()                                         //Таким образом мы инициализируем OpenCV
 
-		orb = new cv.ORB(300)                                   //А затем сразу создадим ORB
+		orb = new cv.ORB(500)                                   //А затем сразу создадим ORB
 		bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING2, true)    //А заодно и матчер
 
 		console.log(Object.keys(cv))
