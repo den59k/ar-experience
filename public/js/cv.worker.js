@@ -30,7 +30,7 @@ const methods = {
 	loadSourceImage: async (imageData) => {
 		const img = cv.matFromImageData(imageData)
 		const keypointsData = getImageKeypoints(img)
-		console.log(keypointsData)
+
 		sourceImages.push(keypointsData)
 
 		return { id: sourceImages.length-1 }
@@ -41,30 +41,44 @@ const methods = {
 		const queryImage = sourceImages[sourceImage.id]
 		const trainImage = getImageKeypoints(img)
 
-		let queryPointsMat;
-		let trainPointsMat;
+		let queryPoints;
+		let trainPoints;
 
 		let finalImage = new cv.Mat()
 		cv.cvtColor(trainImage.image, finalImage, cv.COLOR_GRAY2RGB)
 
 		if(lastFramesData[sourceImage.id]){
-			queryPointsMat = lastFramesData[sourceImage.id].queryPointsMat
-			trainPointsMat = lastFramesData[sourceImage.id].trainPointsMat
+			queryPoints = lastFramesData[sourceImage.id].queryPoints
+			trainPoints = lastFramesData[sourceImage.id].trainPoints
 
+			const lastPoints = cv.matFromArray(trainPoints.length, 1, cv.CV_32FC2, trainPoints.flat());
 			const nextPoints = new cv.Mat()
+
 			const status = new cv.Mat()
 			const errors = new cv.Mat()
+
+			cv.calcOpticalFlowPyrLK(lastFramesData[sourceImage.id].image, trainImage.image, lastPoints, nextPoints, status, errors)
+	
+			trainPoints = []
+			for(let i = 0; i < nextPoints.rows; i++)
+				if(status.charAt(i) === 1 && errors.floatAt(i) < 10)
+					trainPoints.push([
+						nextPoints.floatAt(i, 0),
+						nextPoints.floatAt(i, 1)
+					])
 			
-			cv.calcOpticalFlowPyrLK(lastFramesData[sourceImage.id].image, trainImage.image, trainPointsMat, nextPoints, status, errors)
+			errors.delete()
+			status.delete()
+			nextPoints.delete()
 
-			console.log(nextPoints)
-			console.log(status)
-			console.log(errors)
-
-		
+			if(trainPoints.length < 6){
+				trainPoints = null
+				queryPoints = null
+				lastFramesData[sourceImage.id] = null
+			}
 		}
 
-		if(!queryPointsMat){
+		if(!trainPoints){
 			const matches = new cv.DMatchVector()
 
 			if(trainImage.keypoints.size() > 5)
@@ -77,9 +91,9 @@ const methods = {
 			}
 			matches.delete()
 
-			if(good_matches.length > 7){
-				const queryPoints = []
-				const trainPoints = []
+			if(good_matches.length > 8){
+				queryPoints = []
+				trainPoints = []
 				
 				for(let i = 0; i < good_matches.length; i++) {
 					queryPoints.push([
@@ -93,13 +107,12 @@ const methods = {
 						trainImage.keypoints.get(good_matches[i].trainIdx).pt.y
 					])
 				}
-
-				queryPointsMat = cv.matFromArray(queryPoints.length, 1, cv.CV_32FC3, queryPoints.flat());
-				trainPointsMat = cv.matFromArray(trainPoints.length, 1, cv.CV_32FC2, trainPoints.flat());
 			}
 		}
 
-		if(queryPointsMat){
+		if(trainPoints){
+			const mat1 = cv.matFromArray(queryPoints.length, 1, cv.CV_32FC3, queryPoints.flat());
+			const mat2 = cv.matFromArray(trainPoints.length, 1, cv.CV_32FC2, trainPoints.flat());
 
 			const f = trainImage.image.cols/2/(Math.tan(angle/2*Math.PI/180))
 	
@@ -118,25 +131,16 @@ const methods = {
 			const tvec = new cv.Mat()
 
 			const inliers = new cv.Mat()
-			cv.solvePnPRansac(queryPointsMat, trainPointsMat, mtx, dist, rvec, tvec, false, 100, 8.0, 0.99, inliers)
-
-			if(inliers.rows / queryPointsMat.rows > 0.8){
+			cv.solvePnPRansac(mat1, mat2, mtx, dist, rvec, tvec, false, 100, 8.0, 0.99, inliers)
+	
+			if(inliers.rows / mat1.rows > 0.8){
 				const projectionMatrix = getProjectionMatrix(rvec, tvec, mtx)
 
-				const storePoints = { 
-					queryPointsMat: new cv.Mat(inliers.rows, 1, cv.CV_32FC3), 
-					trainPointsMat: new cv.Mat(inliers.rows, 1, cv.CV_32FC2)
-				}
-				if(lastFramesData[sourceImage.id]){
-					lastFramesData[sourceImage.id].queryPointsMat.delete()
-					lastFramesData[sourceImage.id].trainPointsMat.delete()
-				}
-				
+				const storePoints = { trainPoints: [], queryPoints: [] }
 				for(let i = 0; i < inliers.rows; i++){
-					queryPointsMat.row(i).copyTo(storePoints.queryPointsMat.row(i))
-					trainPointsMat.row(i).copyTo(storePoints.trainPointsMat.row(i))
+					storePoints.trainPoints.push(trainPoints[inliers.intAt(i, 0)])
+					storePoints.queryPoints.push(queryPoints[inliers.intAt(i, 0)])
 				}
-
 				lastFramesData[sourceImage.id] = storePoints
 
 				mtx.delete()
@@ -165,10 +169,8 @@ const methods = {
 				cv.line(finalImage, pointsArr[0], pointsArr[2], [ 0, 255, 0, 255 ], 2 )
 				cv.line(finalImage, pointsArr[0], pointsArr[3], [ 0, 0, 255, 255 ], 2 )
 
-				console.log(trainPointsMat)
-
-				for(let i = 0; i < trainPointsMat.rows; i++)
-					cv.circle(finalImage, { x: trainPointsMat.floatAt(i, 0), y: trainPointsMat.floatAt(i, 1) }, 2, [ 0, 0, 255, 255 ])
+				for(let point of storePoints.trainPoints)
+					cv.circle(finalImage, { x: point[0], y: point[1] }, 2, [ 0, 0, 255, 255 ])
 				
 				projectionMatrix.delete()
 				axis.delete()
@@ -177,8 +179,8 @@ const methods = {
 				lastFramesData[sourceImage.id] = null
 			}
 
-			queryPointsMat.delete()
-			trainPointsMat.delete()
+			mat1.delete()
+			mat2.delete()
 		}
 		
 		if(lastFramesData[sourceImage.id]){
