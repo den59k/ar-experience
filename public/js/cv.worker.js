@@ -39,9 +39,11 @@ const methods = {
 	estimateCameraPosition: async ({ id, imageData }) => {
 		const img = cv.matFromImageData(imageData)
 		
-		
+		const queryImage = sourceImages[id]
+		const trainImage = getImageKeypoints(img)
 
-		return imageDataFromMat(img)
+
+		return imageDataFromMat(trainImage.image)
 	},
 
 	calculatePnP: async ({ sourceImage, imageData }) => {
