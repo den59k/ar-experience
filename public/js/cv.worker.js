@@ -36,6 +36,20 @@ const methods = {
 		return { id: sourceImages.length-1 }
 	},
 
+	estimateCameraPosition: async ({ id, imageData }) => {
+		const img = cv.matFromImageData(imageData)
+		
+		const queryImage = sourceImages[id]
+		const trainImage = getImageKeypoints(img)
+		
+		let finalImage = new cv.Mat()
+		cv.cvtColor(trainImage.image, finalImage, cv.COLOR_GRAY2RGB)
+
+		trainImage.delete()
+
+		return imageDataFromMat(finalImage)
+	},
+
 	calculatePnP: async ({ sourceImage, imageData }) => {
 		const img = cv.matFromImageData(imageData)
 		const queryImage = sourceImages[sourceImage.id]
@@ -191,124 +205,6 @@ const methods = {
 
 		trainImage.delete()
 		return imageDataFromMat(finalImage)
-	},
-
-	matchPoints: async ({ sourceImage, imageData }) => {
-		const img = cv.matFromImageData(imageData)
-
-		const queryImage = sourceImages[sourceImage.id]
-		const trainImage = getImageKeypoints(img)
-
-		const matches = new cv.DMatchVector()
-
-		if(trainImage.keypoints.size() > 5)
-			bfMatcher.match(queryImage.descriptors, trainImage.descriptors, matches)
-
-		const good_matches = new cv.DMatchVector();
-		for (let i = 0; i < matches.size(); i++) {
-			if (matches.get(i).distance < 30) 
-				good_matches.push_back(matches.get(i));
-		}
-		matches.delete()
-
-		let finalImage = trainImage.image
-
-		if(good_matches.size() > 5){
-			const points1 = []
-			const points2 = []
-
-			for(let i = 0; i < good_matches.size(); i++) {
-				points1.push(queryImage.keypoints.get(good_matches.get(i).queryIdx).pt.x)
-				points1.push(queryImage.keypoints.get(good_matches.get(i).queryIdx).pt.y)
-				points1.push(0)
-		
-				points2.push(trainImage.keypoints.get(good_matches.get(i).trainIdx).pt.x)
-				points2.push(trainImage.keypoints.get(good_matches.get(i).trainIdx).pt.y)
-			}
-
-			const mat1 = cv.matFromArray(points1.length/3, 1, cv.CV_32FC3, points1);
-			const mat2 = cv.matFromArray(points2.length/2, 1, cv.CV_32FC2, points2);
-
-			const f = img.cols/2/(Math.tan(angle/2*Math.PI/180))
-	
-			const _mtx = [
-				f, 0, img.cols / 2,
-				0, f, img.rows / 2 ,
-				0, 0, 1
-			]
-
-			const _dist = [ 0, 0, 0, 0 ]
-
-			const mtx = cv.matFromArray(3, 3, cv.CV_64F, _mtx)
-			const dist = cv.matFromArray(1, _dist.length, cv.CV_64F, _dist)
-
-			const rvec = new cv.Mat()
-			const tvec = new cv.Mat()
-
-			cv.solvePnPRansac(mat1, mat2, mtx, dist, rvec, tvec)
-
-			const rotationMatrix = new cv.Mat()
-			cv.Rodrigues(rvec, rotationMatrix)
-
-			const extrinsicMatrix = new cv.Mat(3, 4, cv.CV_64F)
-
-			for(let i = 0; i < 3; i++){
-				for(let j = 0; j < 3; j++){
-					extrinsicMatrix.doublePtr(i, j)[0] = rotationMatrix.doubleAt(i, j)
-				}
-				extrinsicMatrix.doublePtr(i, 3)[0] = tvec.doubleAt(i, 0)
-			}
-
-			const zeros = cv.Mat.zeros(3, 3, cv.CV_64F)
-			
-			const projectionMatrix = new cv.Mat()
-			cv.gemm(mtx, extrinsicMatrix, 1, zeros, 0, projectionMatrix)
-
-			const _axis = [
-				0, 0, 0, 1,
-				30, 0, 0, 1,
-				0, 30, 0, 1,
-				0, 0, -30, 1
-			]
-			const axis = cv.matFromArray(4, 4, cv.CV_64F, _axis).t()
-
-			const _points = new cv.Mat()
-			cv.gemm(projectionMatrix, axis, 1, zeros, 0, _points)
-
-			const points = _points.t()
-
-			const pointsArr = []
-			for(let i = 0; i < 4; i++){
-				pointsArr.push({
-					x: points.doubleAt(i, 0) / points.doubleAt(i, 2),
-					y: points.doubleAt(i, 1) / points.doubleAt(i, 2)
-				})
-			}
-
-	
-			cv.line(finalImage, pointsArr[0], pointsArr[1], [ 255, 0, 0, 255 ], 2 )
-			cv.line(finalImage, pointsArr[0], pointsArr[2], [ 0, 255, 0, 255 ], 2 )
-			cv.line(finalImage, pointsArr[0], pointsArr[3], [ 0, 0, 255, 255 ], 2 )
-			
-			projectionMatrix.delete()
-			axis.delete()
-			points.delete()
-			_points.delete()
-
-			mat1.delete()
-			mat2.delete()
-			mtx.delete()
-			dist.delete()
-
-		}
-
-		let result = new cv.Mat()
-		cv.drawMatches(queryImage.image, queryImage.keypoints, finalImage, trainImage.keypoints, good_matches, result)
-
-		trainImage.delete()
-		good_matches.delete()
-		
-		return imageDataFromMat(result)
 	},
 
 	getCameraPosition: async (imageData) => {

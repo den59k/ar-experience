@@ -46,6 +46,10 @@ class CV {
 		return this._dispatch("calculatePnP", { sourceImage, imageData }) 
 	}
 
+	estimateCameraPosition (id, imageData){
+		return this._dispatch("estimateCameraPosition", { id, imageData }) 
+	}
+
 }
 
 export default new CV()
