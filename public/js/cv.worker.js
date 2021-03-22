@@ -29,7 +29,10 @@ const methods = {
 
 	loadSourceImage: async (imageData) => {
 		const img = cv.matFromImageData(imageData)
-		const keypointsData = getImageKeypoints(img)
+
+		const imgGray = convertToGray(img)
+
+		const keypointsData = getImageKeypoints(imgGray)
 
 		sourceImages.push(keypointsData)
 
@@ -39,11 +42,10 @@ const methods = {
 	estimateCameraPosition: async ({ id, imageData }) => {
 		const img = cv.matFromImageData(imageData)
 		
-		const queryImage = sourceImages[id]
-		const trainImage = getImageKeypoints(img)
+		const imgGray = convertToGray(img)
 
-
-		return imageDataFromMat(trainImage.image)
+			
+		return imageDataFromMat(imgGray)
 	},
 
 	calculatePnP: async ({ sourceImage, imageData }) => {
@@ -208,6 +210,14 @@ const methods = {
 	}
 }
 
+function convertToGray (img){
+	const imgGray = new cv.Mat()
+	cv.cvtColor(img, imgGray, cv.COLOR_BGR2GRAY)
+
+	img.delete()
+	return imgGray
+}
+
 function dot(a, b){
 	const res = new cv.Mat
 	const zeros = cv.Mat.zeros(a.cols, b.rows, cv.CV_64F)
@@ -240,14 +250,12 @@ function getProjectionMatrix(rvec, tvec, mtx){
 }
 
 function getImageKeypoints(image){
-	const imgGray = new cv.Mat()
-	cv.cvtColor(image, imgGray, cv.COLOR_BGR2GRAY)
 
 	const keypoints = new cv.KeyPointVector()             //Ключевые точки
 	const none = new cv.Mat() 
 	const descriptors = new cv.Mat()                              //Дескрипторы точек (т.е. некое уникальное значение)
 
-	orb.detectAndCompute(imgGray, none, keypoints, descriptors)
+	orb.detectAndCompute(image, none, keypoints, descriptors)
 
 	none.delete()
 	image.delete()
@@ -255,10 +263,10 @@ function getImageKeypoints(image){
 	const dispose = () => {
 		keypoints.delete()
 		descriptors.delete()
-		imgGray.delete()
+		image.delete()
 	}
 
-	return { image: imgGray, keypoints, descriptors, delete: dispose }
+	return { image, keypoints, descriptors, delete: dispose }
 }
 
 //А эта функция переводит mat в imageData для canvas
