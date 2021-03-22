@@ -1,5 +1,5 @@
-const sourceImages = []
-const lastFramesData = []
+const memoryData = []
+
 const angle = 30
 
 const methods = {
@@ -31,21 +31,65 @@ const methods = {
 		const img = cv.matFromImageData(imageData)
 
 		const imgGray = convertToGray(img)
+		img.delete()
 
 		const keypointsData = getImageKeypoints(imgGray)
 
-		sourceImages.push(keypointsData)
+		memoryData.push({ keypointsData })
 
-		return { id: sourceImages.length-1 }
+		return { id: memoryData.length-1 }
 	},
 
 	estimateCameraPosition: async ({ id, imageData }) => {
 		const img = cv.matFromImageData(imageData)
-		
 		const imgGray = convertToGray(img)
+		img.delete()
 
+		let finalImage = new cv.Mat()
+		cv.cvtColor(imgGray, finalImage, cv.COLOR_GRAY2RGB)
+
+		let { keypointsData: queryImageData, queryPointsMat, trainPointsMat } = memoryData[id]
+
+		if(!trainPointsMat){
+			const trainImageData = getImageKeypoints(imgGray)
 			
-		return imageDataFromMat(imgGray)
+			const a = matchKeypoints(queryImageData, trainImageData, 40)
+			
+			queryPointsMat = a.queryPointsMat
+			trainPointsMat = a.trainPointsMat
+
+			trainImageData.delete()
+		}
+
+
+		if(trainPointsMat && trainPointsMat.rows > 6){
+	
+			const mtx = getCameraMatrix(imgGray.rows, imgGray.cols)
+			const dist = getDistortion()
+
+			const rvec = new cv.Mat()
+			const tvec = new cv.Mat()
+
+			const inliers = new cv.Mat()
+			cv.solvePnPRansac(queryPointsMat, trainPointsMat, mtx, dist, rvec, tvec, false, 100, 8.0, 0.99, inliers)
+
+			if(inliers.rows / trainPointsMat.rows > 0.8){
+				const projectionMatrix = getProjectionMatrix(rvec, tvec, mtx)
+
+				draw(finalImage, projectionMatrix)
+				
+				projectionMatrix.delete()
+			}
+
+			mtx.delete()
+			dist.delete()
+			rvec.delete()
+			tvec.delete()
+			inliers.delete()
+		}
+		
+		imgGray.delete()
+		return imageDataFromMat(finalImage)
 	},
 
 	calculatePnP: async ({ sourceImage, imageData }) => {
@@ -210,11 +254,95 @@ const methods = {
 	}
 }
 
+function draw (finalImage, projectionMatrix){
+	const _axis = [
+		0, 0, 0, 1,
+		30, 0, 0, 1,
+		0, 30, 0, 1,
+		0, 0, -30, 1
+	]
+	const axisT = cv.matFromArray(4, 4, cv.CV_64F, _axis)
+	const axis = axisT.t()
+
+	const pointsT = dot(projectionMatrix, axis)
+	const points = pointsT.t()
+
+	const pointsArr = []
+	for(let i = 0; i < 4; i++){
+		pointsArr.push({
+			x: points.doubleAt(i, 0) / points.doubleAt(i, 2),
+			y: points.doubleAt(i, 1) / points.doubleAt(i, 2)
+		})
+	}
+
+	cv.line(finalImage, pointsArr[0], pointsArr[1], [ 255, 0, 0, 255 ], 2 )
+	cv.line(finalImage, pointsArr[0], pointsArr[2], [ 0, 255, 0, 255 ], 2 )
+	cv.line(finalImage, pointsArr[0], pointsArr[3], [ 0, 0, 255, 255 ], 2 )
+
+	axisT.delete()
+	axis.delete()
+	pointsT.delete()
+	points.delete()
+}
+
+function getCameraMatrix(rows, cols){
+	const f = cols/2/(Math.tan(angle/2*Math.PI/180))
+	const _mtx = [
+		f, 0, cols / 2,
+		0, f, rows / 2 ,
+		0, 0, 1
+	]
+	const mtx = cv.matFromArray(3, 3, cv.CV_64F, _mtx)
+	
+	return mtx
+}
+
+function getDistortion(){
+	const _dist = [ 0, 0, 0, 0 ]
+	const dist = cv.matFromArray(1, _dist.length, cv.CV_64F, _dist)
+	return dist
+}
+
+function matchKeypoints (queryImageData, trainImageData, threshold = 30){
+	
+	const queryPoints = []
+	const trainPoints = []
+
+	const matches = new cv.DMatchVector()
+
+	if(trainImageData.keypoints.size() > 5)
+		bfMatcher.match(queryImageData.descriptors, trainImageData.descriptors, matches)
+
+	const good_matches = []
+	for (let i = 0; i < matches.size(); i++) {
+		if (matches.get(i).distance < threshold) 
+			good_matches.push(matches.get(i));
+	}
+
+	for(let i = 0; i < good_matches.length; i++) {
+		queryPoints.push([
+			queryImageData.keypoints.get(good_matches[i].queryIdx).pt.x,
+			queryImageData.keypoints.get(good_matches[i].queryIdx).pt.y,
+			0
+		])
+
+		trainPoints.push([
+			trainImageData.keypoints.get(good_matches[i].trainIdx).pt.x,
+			trainImageData.keypoints.get(good_matches[i].trainIdx).pt.y
+		])
+	}
+	
+	const queryPointsMat = cv.matFromArray(queryPoints.length, 1, cv.CV_32FC3, queryPoints.flat());
+	const trainPointsMat = cv.matFromArray(trainPoints.length, 1, cv.CV_32FC2, trainPoints.flat());
+
+	matches.delete()
+	return { queryPointsMat, trainPointsMat }
+}
+
 function convertToGray (img){
 	const imgGray = new cv.Mat()
 	cv.cvtColor(img, imgGray, cv.COLOR_BGR2GRAY)
 
-	img.delete()
 	return imgGray
 }
 
@@ -258,12 +386,10 @@ function getImageKeypoints(image){
 	orb.detectAndCompute(image, none, keypoints, descriptors)
 
 	none.delete()
-	image.delete()
 
 	const dispose = () => {
 		keypoints.delete()
 		descriptors.delete()
-		image.delete()
 	}
 
 	return { image, keypoints, descriptors, delete: dispose }
