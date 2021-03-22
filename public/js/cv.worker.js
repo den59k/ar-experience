@@ -1,4 +1,5 @@
 const sourceImages = []
+const lastFramesData = []
 const angle = 30
 
 const methods = {
@@ -33,6 +34,161 @@ const methods = {
 		sourceImages.push(keypointsData)
 
 		return { id: sourceImages.length-1 }
+	},
+
+	calculatePnP: async ({ sourceImage, imageData }) => {
+		const img = cv.matFromImageData(imageData)
+		const queryImage = sourceImages[sourceImage.id]
+		const trainImage = getImageKeypoints(img)
+
+		let queryPointsMat;
+		let trainPointsMat;
+
+		let finalImage = new cv.Mat()
+		cv.cvtColor(trainImage.image, finalImage, cv.COLOR_GRAY2RGB)
+
+		if(lastFramesData[sourceImage.id]){
+			queryPointsMat = lastFramesData[sourceImage.id].queryPointsMat
+			trainPointsMat = lastFramesData[sourceImage.id].trainPointsMat
+
+			const nextPoints = new cv.Mat()
+			const status = new cv.Mat()
+			const errors = new cv.Mat()
+			
+			cv.calcOpticalFlowPyrLK(lastFramesData[sourceImage.id].image, trainImage.image, trainPointsMat, nextPoints, status, errors)
+
+			console.log(nextPoints)
+			console.log(status)
+			console.log(errors)
+
+		
+		}
+
+		if(!queryPointsMat){
+			const matches = new cv.DMatchVector()
+
+			if(trainImage.keypoints.size() > 5)
+				bfMatcher.match(queryImage.descriptors, trainImage.descriptors, matches)
+
+			const good_matches = []
+			for (let i = 0; i < matches.size(); i++) {
+				if (matches.get(i).distance < 30) 
+					good_matches.push(matches.get(i));
+			}
+			matches.delete()
+
+			if(good_matches.length > 7){
+				const queryPoints = []
+				const trainPoints = []
+				
+				for(let i = 0; i < good_matches.length; i++) {
+					queryPoints.push([
+						queryImage.keypoints.get(good_matches[i].queryIdx).pt.x,
+						queryImage.keypoints.get(good_matches[i].queryIdx).pt.y,
+						0
+					])
+
+					trainPoints.push([
+						trainImage.keypoints.get(good_matches[i].trainIdx).pt.x,
+						trainImage.keypoints.get(good_matches[i].trainIdx).pt.y
+					])
+				}
+
+				queryPointsMat = cv.matFromArray(queryPoints.length, 1, cv.CV_32FC3, queryPoints.flat());
+				trainPointsMat = cv.matFromArray(trainPoints.length, 1, cv.CV_32FC2, trainPoints.flat());
+			}
+		}
+
+		if(queryPointsMat){
+
+			const f = trainImage.image.cols/2/(Math.tan(angle/2*Math.PI/180))
+	
+			const _mtx = [
+				f, 0, trainImage.image.cols / 2,
+				0, f, trainImage.image.rows / 2 ,
+				0, 0, 1
+			]
+
+			const _dist = [ 0, 0, 0, 0 ]
+
+			const mtx = cv.matFromArray(3, 3, cv.CV_64F, _mtx)
+			const dist = cv.matFromArray(1, _dist.length, cv.CV_64F, _dist)
+
+			const rvec = new cv.Mat()
+			const tvec = new cv.Mat()
+
+			const inliers = new cv.Mat()
+			cv.solvePnPRansac(queryPointsMat, trainPointsMat, mtx, dist, rvec, tvec, false, 100, 8.0, 0.99, inliers)
+
+			if(inliers.rows / queryPointsMat.rows > 0.8){
+				const projectionMatrix = getProjectionMatrix(rvec, tvec, mtx)
+
+				const storePoints = { 
+					queryPointsMat: new cv.Mat(inliers.rows, 1, cv.CV_32FC3), 
+					trainPointsMat: new cv.Mat(inliers.rows, 1, cv.CV_32FC2)
+				}
+				if(lastFramesData[sourceImage.id]){
+					lastFramesData[sourceImage.id].queryPointsMat.delete()
+					lastFramesData[sourceImage.id].trainPointsMat.delete()
+				}
+				
+				for(let i = 0; i < inliers.rows; i++){
+					queryPointsMat.row(i).copyTo(storePoints.queryPointsMat.row(i))
+					trainPointsMat.row(i).copyTo(storePoints.trainPointsMat.row(i))
+				}
+
+				lastFramesData[sourceImage.id] = storePoints
+
+				mtx.delete()
+				dist.delete()
+
+				const _axis = [
+					0, 0, 0, 1,
+					30, 0, 0, 1,
+					0, 30, 0, 1,
+					0, 0, -30, 1
+				]
+				const axis = cv.matFromArray(4, 4, cv.CV_64F, _axis).t()
+
+				const points = dot(projectionMatrix, axis).t()
+
+				const pointsArr = []
+				for(let i = 0; i < 4; i++){
+					pointsArr.push({
+						x: points.doubleAt(i, 0) / points.doubleAt(i, 2),
+						y: points.doubleAt(i, 1) / points.doubleAt(i, 2)
+					})
+				}
+
+		
+				cv.line(finalImage, pointsArr[0], pointsArr[1], [ 255, 0, 0, 255 ], 2 )
+				cv.line(finalImage, pointsArr[0], pointsArr[2], [ 0, 255, 0, 255 ], 2 )
+				cv.line(finalImage, pointsArr[0], pointsArr[3], [ 0, 0, 255, 255 ], 2 )
+
+				console.log(trainPointsMat)
+
+				for(let i = 0; i < trainPointsMat.rows; i++)
+					cv.circle(finalImage, { x: trainPointsMat.floatAt(i, 0), y: trainPointsMat.floatAt(i, 1) }, 2, [ 0, 0, 255, 255 ])
+				
+				projectionMatrix.delete()
+				axis.delete()
+				points.delete()
+			}else{
+				lastFramesData[sourceImage.id] = null
+			}
+
+			queryPointsMat.delete()
+			trainPointsMat.delete()
+		}
+		
+		if(lastFramesData[sourceImage.id]){
+			if(lastFramesData[sourceImage.id].image)
+				lastFramesData[sourceImage.id].image.delete()
+			lastFramesData[sourceImage.id].image = new cv.Mat(trainImage.image)
+		}
+
+		trainImage.delete()
+		return imageDataFromMat(finalImage)
 	},
 
 	matchPoints: async ({ sourceImage, imageData }) => {
@@ -158,6 +314,37 @@ const methods = {
 	}
 }
 
+function dot(a, b){
+	const res = new cv.Mat
+	const zeros = cv.Mat.zeros(a.cols, b.rows, cv.CV_64F)
+	cv.gemm(a, b, 1, zeros, 0, res)
+	zeros.delete()
+	
+	return res
+}
+
+function getProjectionMatrix(rvec, tvec, mtx){
+	const rotationMatrix = new cv.Mat()
+	cv.Rodrigues(rvec, rotationMatrix)
+
+	const extrinsicMatrix = new cv.Mat(3, 4, cv.CV_64F)
+
+	for(let i = 0; i < 3; i++){
+		for(let j = 0; j < 3; j++){
+			extrinsicMatrix.doublePtr(i, j)[0] = rotationMatrix.doubleAt(i, j)
+		}
+		extrinsicMatrix.doublePtr(i, 3)[0] = tvec.doubleAt(i, 0)
+	}
+
+	
+	const projectionMatrix = dot(mtx, extrinsicMatrix)
+
+	extrinsicMatrix.delete()
+	rotationMatrix.delete()
+
+	return projectionMatrix
+}
+
 function getImageKeypoints(image){
 	const imgGray = new cv.Mat()
 	cv.cvtColor(image, imgGray, cv.COLOR_BGR2GRAY)
@@ -169,15 +356,15 @@ function getImageKeypoints(image){
 	orb.detectAndCompute(imgGray, none, keypoints, descriptors)
 
 	none.delete()
-	imgGray.delete()
+	image.delete()
 
 	const dispose = () => {
 		keypoints.delete()
 		descriptors.delete()
-		image.delete()
+		imgGray.delete()
 	}
 
-	return { image, keypoints, descriptors, delete: dispose }
+	return { image: imgGray, keypoints, descriptors, delete: dispose }
 }
 
 //А эта функция переводит mat в imageData для canvas

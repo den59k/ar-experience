@@ -80,7 +80,7 @@ function App() {
 				const imageData = getImageData(sourceVideoRef.current)
 				
 				const time = performance.now()
-				const resultImageData = await CV.matchPoints(image, imageData)
+				const resultImageData = await CV.calculatePnP(image, imageData)
 				setFps(Math.round(1000 / (performance.now() - time)))
 
 				canvasRef.current.width = resultImageData.width

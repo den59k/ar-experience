@@ -42,6 +42,10 @@ class CV {
 		return this._dispatch("matchPoints", { sourceImage, imageData })  
 	}
 
+	calculatePnP (sourceImage, imageData){
+		return this._dispatch("calculatePnP", { sourceImage, imageData }) 
+	}
+
 }
 
 export default new CV()
