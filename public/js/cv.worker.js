@@ -75,7 +75,7 @@ const methods = {
 			const queryImageData = memoryData[id].keypointsData
 			const trainImageData = getImageKeypoints(imgGray)
 			
-			const a = matchKeypoints(queryImageData, trainImageData, 25)
+			const a = matchKeypoints(queryImageData, trainImageData, 30)
 			
 			queryPointsMat = a.queryPointsMat
 			trainPointsMat = a.trainPointsMat
@@ -83,8 +83,8 @@ const methods = {
 			trainImageData.delete()
 		}
 
-
-		if(trainPointsMat && trainPointsMat.rows > 12){
+		const k = memoryData[id].trainPointsMat? 0.6: 1
+		if(trainPointsMat && trainPointsMat.rows > 12*k){
 	
 			const mtx = getCameraMatrix(imgGray.rows, imgGray.cols)
 			const dist = getDistortion()
@@ -93,9 +93,9 @@ const methods = {
 			const tvec = new cv.Mat()
 
 			const inliers = new cv.Mat()
-			cv.solvePnPRansac(queryPointsMat, trainPointsMat, mtx, dist, rvec, tvec, false, 100, 6.0, 0.99, inliers)
+			cv.solvePnPRansac(queryPointsMat, trainPointsMat, mtx, dist, rvec, tvec, false, 100, 5.0, 0.99, inliers)
 
-			if(inliers.rows / trainPointsMat.rows > 0.8){
+			if(inliers.rows / trainPointsMat.rows > 0.9*k){
 				const projectionMatrix = getProjectionMatrix(rvec, tvec, mtx)
 
 				const filterArr = generateFilterArr(queryPointsMat.rows)
