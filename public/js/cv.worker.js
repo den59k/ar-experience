@@ -9,7 +9,7 @@ const methods = {
 
 		cv = await cv()                                         //Таким образом мы инициализируем OpenCV
 
-		orb = new cv.ORB(700)                                   //А затем сразу создадим ORB
+		orb = new cv.ORB(1000)                                   //А затем сразу создадим ORB
 		bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING, true)    //А заодно и матчер
 
 		console.log(Object.keys(cv))
@@ -75,7 +75,7 @@ const methods = {
 			const queryImageData = memoryData[id].keypointsData
 			const trainImageData = getImageKeypoints(imgGray)
 			
-			const a = matchKeypoints(queryImageData, trainImageData, 35)
+			const a = matchKeypoints(queryImageData, trainImageData, 25)
 			
 			queryPointsMat = a.queryPointsMat
 			trainPointsMat = a.trainPointsMat

@@ -68,7 +68,7 @@ function App() {
 		}
 		
 
-		Promise.all([ init(), initCamera(400) ]).then(values => {
+		Promise.all([ init(), initCamera(600) ]).then(values => {
 			const { image } = values[0]
 			console.log(image)
 
