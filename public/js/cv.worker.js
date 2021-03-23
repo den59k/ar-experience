@@ -48,9 +48,31 @@ const methods = {
 		let finalImage = new cv.Mat()
 		cv.cvtColor(imgGray, finalImage, cv.COLOR_GRAY2RGB)
 
-		let { keypointsData: queryImageData, queryPointsMat, trainPointsMat } = memoryData[id]
+		let queryPointsMat = null;
+		let trainPointsMat = null;
+
+		if(memoryData[id].trainPointsMat){
+
+			const nextPoints = new cv.Mat()
+			const status = new cv.Mat()
+			const errors = new cv.Mat()
+
+			cv.calcOpticalFlowPyrLK(memoryData[id].lastFrame, imgGray, memoryData[id].trainPointsMat, nextPoints, status, errors)
+			
+			const filterArr = []
+			for(let i = 0; i < status.rows; i++)
+				filterArr.push(status.charAt(i, 0) === 1 && errors.floatAt(i, 0) < 10)
+			
+			trainPointsMat = filter(nextPoints, filterArr)
+			queryPointsMat = filter(memoryData[id].queryPointsMat, filterArr)
+
+			status.delete()
+			errors.delete()
+			nextPoints.delete()
+		}
 
 		if(!trainPointsMat){
+			const queryImageData = memoryData[id].keypointsData
 			const trainImageData = getImageKeypoints(imgGray)
 			
 			const a = matchKeypoints(queryImageData, trainImageData, 40)
@@ -76,19 +98,35 @@ const methods = {
 			if(inliers.rows / trainPointsMat.rows > 0.8){
 				const projectionMatrix = getProjectionMatrix(rvec, tvec, mtx)
 
+				const filterArr = generateFilterArr(queryPointsMat.rows)
+				for(let i = 0; i < inliers.rows; i++)
+					filterArr[inliers.intAt(i, 0)] = true
+
+				clearMemory(memoryData[id])
+				memoryData[id].queryPointsMat = filter(queryPointsMat, filterArr)
+				memoryData[id].trainPointsMat = filter(trainPointsMat, filterArr)
+
 				draw(finalImage, projectionMatrix)
-				
 				projectionMatrix.delete()
-			}
+
+			}else
+				clearMemory(memoryData[id])
 
 			mtx.delete()
 			dist.delete()
 			rvec.delete()
 			tvec.delete()
 			inliers.delete()
-		}
+		}else
+			clearMemory(memoryData[id])
 		
-		imgGray.delete()
+
+		if(queryPointsMat) queryPointsMat.delete()
+		if(trainPointsMat) trainPointsMat.delete()
+		
+		if(memoryData[id].lastFrame) memoryData[id].lastFrame.delete()
+		memoryData[id].lastFrame = imgGray
+		
 		return imageDataFromMat(finalImage)
 	},
 
@@ -252,6 +290,37 @@ const methods = {
 	getCameraPosition: async (imageData) => {
 		
 	}
+}
+
+function clearMemory (memory){
+	if(memory.queryPointsMat) memory.queryPointsMat.delete()
+	if(memory.trainPointsMat) memory.trainPointsMat.delete()
+	memory.trainPointsMat = null
+	memory.queryPointsMat = null
+}
+
+//Просто функции для чистоты кода
+function generateFilterArr (rows){
+	const arr = []
+	for(let i = 0; i < rows; i++) 
+		arr.push(false)
+
+	return arr
+}
+
+//Отфильтровываем Mat
+function filter (mat, arr){
+
+	const rows = arr.reduce((sum, flag) => flag? sum+1: sum, 0)
+	const newMat = new cv.Mat(rows, mat.cols, mat.type())
+	
+	let j = 0;
+	for(let i = 0; i < mat.rows; i++){
+		if(arr[i])
+			mat.row(i).copyTo(newMat.row(j++))
+	}
+
+	return newMat
 }
 
 function draw (finalImage, projectionMatrix){
