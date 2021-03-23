@@ -1,6 +1,6 @@
 const memoryData = []
 
-const angle = 30
+const angle = 35
 
 const methods = {
 	init: async () => {
@@ -84,7 +84,7 @@ const methods = {
 		}
 
 
-		if(trainPointsMat && trainPointsMat.rows > 8){
+		if(trainPointsMat && trainPointsMat.rows > 12){
 	
 			const mtx = getCameraMatrix(imgGray.rows, imgGray.cols)
 			const dist = getDistortion()
@@ -93,7 +93,7 @@ const methods = {
 			const tvec = new cv.Mat()
 
 			const inliers = new cv.Mat()
-			cv.solvePnPRansac(queryPointsMat, trainPointsMat, mtx, dist, rvec, tvec, false, 100, 8.0, 0.99, inliers)
+			cv.solvePnPRansac(queryPointsMat, trainPointsMat, mtx, dist, rvec, tvec, false, 100, 6.0, 0.99, inliers)
 
 			if(inliers.rows / trainPointsMat.rows > 0.8){
 				const projectionMatrix = getProjectionMatrix(rvec, tvec, mtx)
@@ -107,6 +107,7 @@ const methods = {
 				memoryData[id].trainPointsMat = filter(trainPointsMat, filterArr)
 
 				draw(finalImage, projectionMatrix)
+				drawPoints(finalImage, trainPointsMat)
 				projectionMatrix.delete()
 
 			}else
@@ -197,8 +198,15 @@ function draw (finalImage, projectionMatrix){
 	points.delete()
 }
 
+function drawPoints(finalImage, mat){
+	for(let i = 0; i < mat.rows; i++){
+		cv.circle(finalImage, { x: mat.floatAt(i, 0), y: mat.floatAt(i, 1) }, 2, [ 0, 0, 255, 0 ])
+	}
+}
+
 function getCameraMatrix(rows, cols){
-	const f = cols/2/(Math.tan(angle/2*Math.PI/180))
+	const f = Math.hypot(cols, rows)/2/(Math.tan(angle/2*Math.PI/180))
+	console.log(f)
 	const _mtx = [
 		f, 0, cols / 2,
 		0, f, rows / 2 ,
